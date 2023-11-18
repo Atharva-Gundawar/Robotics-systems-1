@@ -1,5 +1,19 @@
+from multiprocessing import Process, Pipe
 import cv2
-from ultralytics import YOLO
+import numpy as np
+import time
+import datetime
+import threading
+import os,sys
+import matplotlib.pyplot as plt
+import serial
+import serial.tools.list_ports 
+import platform
+
+from pymycobot.mycobot import MyCobot
+
+IS_CV_4 = cv2.__version__[0] == '4'
+__version__ = "1.0"  # Adaptive seeed
 
 
 class Object_detect():
@@ -52,13 +66,13 @@ class Object_detect():
         self.aruco_params = cv2.aruco.DetectorParameters_create()
         
         # yolov5 model file path
-        # self.path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        # self.modelWeights = self.path + "/scripts/yolov5s.onnx"
-        # if IS_CV_4:
-        #     self.net = cv2.dnn.readNet(self.modelWeights)
-        # else:
-        #     print('Load yolov5 model need the version of opencv is 4.')
-        #     exit(0)
+        self.path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        self.modelWeights = self.path + "/scripts/yolov5s.onnx"
+        if IS_CV_4:
+            self.net = cv2.dnn.readNet(self.modelWeights)
+        else:
+            print('Load yolov5 model need the version of opencv is 4.')
+            exit(0)
             
         # Constants.
         self.INPUT_WIDTH = 640   # 640
@@ -106,13 +120,13 @@ class Object_detect():
         time.sleep(3)
 
         # send coordinates to move mycobot
-        self.mc.send_coords([x, y,  170.6, 179.87, -3.78, -62.75], 25, 1) # usb :rx,ry,rz -173.3, -5.48, -57.9
+        self.mc.send_coords([x, y,  170.6, 179.87, -3.78, -62.75], 40, 1) # usb :rx,ry,rz -173.3, -5.48, -57.9
         time.sleep(3)
         
         # self.mc.send_coords([x, y, 150, 179.87, -3.78, -62.75], 25, 0)
         # time.sleep(3)
 
-        self.mc.send_coords([x, y, 65, 179.87, -3.78, -62.75], 25, 0)
+        self.mc.send_coords([x, y, 65, 179.87, -3.78, -62.75], 40, 1)
         # self.mc.send_coords([x, y, 103, 179.87, -3.78, -62.75], 25, 0)
         
         time.sleep(4)
@@ -135,7 +149,7 @@ class Object_detect():
 
 
 
-        self.mc.send_coords(self.move_coords[color], 25, 1)
+        self.mc.send_coords(self.move_coords[color], 40, 1)
         time.sleep(4)
 
         # close pump
@@ -370,83 +384,195 @@ class Object_detect():
             return None
 
 
+status = True
+def camera_status():
+    global status
+    status = True
+    cap_num = 0
+    cap = cv2.VideoCapture(cap_num)
+    
+    
+    
+def runs():
+    global status
 
-# Global variables
-drawing = False
-ix, iy = -1, -1
-cx, cy = -1, -1
+    detect = Object_detect()
 
-# Mouse callback function
-def draw_rectangle(event, x, y, flags, param):
-    global ix, iy, cx, cy, drawing
+    # init mycobot
+    detect.run()
+    _init_ = 20  # 
+    init_num = 0
+    nparams = 0
+    num = 0
+    real_sx = real_sy = 0
+    
+    # yolov5 img path
+    path_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    path_img = path_dir + '/res/yolov5_detect.png'
+    # open the camera
+    if platform.system() == "Windows":
+        cap_num = 1
+    elif platform.system() == "Linux":
+        cap_num = 0
+    cap = cv2.VideoCapture(cap_num)
+        
+    print("*  热键(请在摄像头的窗口使用):                   *")
+    print("*  hotkey(please use it in the camera window): *")
+    print("*  z: 拍摄图片(take picture)                    *")
+    print("*  q: 退出(quit)                                *")
 
-    if event == cv2.EVENT_LBUTTONDOWN:
-        drawing = True
-        ix, iy = x, y
+    while cv2.waitKey(1)<0:
+        if not status:
+            cap = cv2.VideoCapture(cap_num)
+            status = True
+            print("请将可识别物体放置摄像头窗口进行拍摄")
+            print("Please place an identifiable object in the camera window for shooting")
+            print("*  热键(请在摄像头的窗口使用):                   *")
+            print("*  hotkey(please use it in the camera window): *")
+            print("*  z: 拍摄图片(take picture)                    *")
+            print("*  q: 退出(quit)                                *")
+        # 读入每一帧
+        ret, frame = cap.read()
 
-    elif event == cv2.EVENT_LBUTTONUP:
-        drawing = False
-        cx, cy = x, y
-        cv2.rectangle(frame, (ix, iy), (cx, cy), (0, 255, 0), 2)
-        cv2.imshow("frame", frame)
+        cv2.imshow("capture", frame)
 
-# Create a VideoCapture object
-cap = cv2.VideoCapture(0)  # Replace 'your_video_file.mp4' with the path to your video file
+            # 存储
+        input = cv2.waitKey(1) & 0xFF
+        if input == ord('q'):
+            print('quit')
+            break
+        elif input == ord('z'):
+            print("请截取白色识别区域的部分")
+            print("Please capture the part of the white recognition area")
+            # 选择ROI
+            roi = cv2.selectROI(windowName="capture",
+                        img=frame,
+                        showCrosshair=False,
+                        fromCenter=False)
+            x, y, w, h = roi
+            print(roi)
+            if roi != (0, 0, 0, 0):
+                crop = frame[y:y+h, x:x+w]
+                cv2.imwrite(path_img, crop)
+                cap.release()
+                cv2.destroyAllWindows()
+                status=False
+            
+            
+            while True:
+                frame = cv2.imread(path_img)
+                
+                #frame = frame[170:700, 230:720]
+                frame = detect.transform_frame(frame)
+                
+                # cv2.imshow('oringal',frame)
+                
+                if _init_ > 0:
+                    _init_-=1
+                    continue
+                # calculate the parameters of camera clipping
+                if init_num < 20:
+                    if detect.get_calculate_params(frame) is None:
+                        cv2.imshow("figure",frame)
+                        continue
+                    else:
+                        x1,x2,y1,y2 = detect.get_calculate_params(frame)
+                        detect.draw_marker(frame,x1,y1)
+                        detect.draw_marker(frame,x2,y2)
+                        detect.sum_x1+=x1
+                        detect.sum_x2+=x2
+                        detect.sum_y1+=y1
+                        detect.sum_y2+=y2
+                        init_num+=1
+                        continue
+                elif init_num==20:
+                    detect.set_cut_params(
+                        (detect.sum_x1)/20.0, 
+                        (detect.sum_y1)/20.0, 
+                        (detect.sum_x2)/20.0, 
+                        (detect.sum_y2)/20.0, 
+                    )
+                    detect.sum_x1 = detect.sum_x2 = detect.sum_y1 = detect.sum_y2 = 0
+                    init_num+=1
+                    continue
 
-# Check if the video stream is opened successfully
-if not cap.isOpened():
-    print("Error: Could not open video.")
-    exit()
+                # calculate params of the coords between cube and mycobot
+                if nparams < 10:
+                    if detect.get_calculate_params(frame) is None:
+                        cv2.imshow("figure",frame)
+                        continue
+                    else:
+                        x1,x2,y1,y2 = detect.get_calculate_params(frame)
+                        detect.draw_marker(frame,x1,y1)
+                        detect.draw_marker(frame,x2,y2)
+                        detect.sum_x1+=x1
+                        detect.sum_x2+=x2
+                        detect.sum_y1+=y1
+                        detect.sum_y2+=y2
+                        nparams+=1
+                        continue
+                elif nparams==10:
+                    nparams+=1
+                    # calculate and set params of calculating real coord between cube and mycobot
+                    detect.set_params(
+                        (detect.sum_x1+detect.sum_x2)/20.0, 
+                        (detect.sum_y1+detect.sum_y2)/20.0, 
+                        abs(detect.sum_x1-detect.sum_x2)/10.0+abs(detect.sum_y1-detect.sum_y2)/10.0
+                    )
+                    print('start yolov5 recognition.....')
+                    print("ok") 
+                    continue
+                # yolov5 detect result        
+                detect_result = detect.post_process(frame)
+                print('pick...')
+                if detect_result:
+                    x, y, input_img = detect_result
+                    
+                    real_x, real_y = detect.get_position(x, y)
+                    print("real_x,real_y:", (round(real_x, 2), round(real_y, 2)))
+                  
+                    a = threading.Thread(target=lambda:detect.decide_move(real_x, real_y, detect.color))
+                    a.start()
+                  
+                    cv2.imshow("detect_done",input_img)
+                    cv2.waitKey(0)
+                    cv2.destroyAllWindows()
+                break
+                
 
-# Create a window and set the callback function
-cv2.namedWindow("frame")
-cv2.setMouseCallback("frame", draw_rectangle)
+if __name__ == "__main__":
 
-while True:
-    ret, frame = cap.read()
+    runs()
+    
 
-    if not ret:
-        print("Error: Couldn't read frame.")
-        break
 
-    # Display the frame
-    cv2.imshow("frame", frame)
 
-    # Check for 'q' key to exit
-    if cv2.waitKey(1) & 0xFF == ord('q'):
-        break
 
-    # Check if a rectangle is drawn, if yes, show only that region
-    if not drawing and ix != -1 and iy != -1 and cx != -1 and cy != -1:
-        roi = frame[iy:cy, ix:cx]
-        cv2.imshow("selected_area", roi)
 
-# Release the VideoCapture and destroy all OpenCV windows
-cap.release()
-cv2.destroyAllWindows()
 
-print(iy,cy, ix,cx)
 
-model = YOLO('yolov8n.pt')  # Make sure 'yolov8x.pt' exists in the current directory or provide the correct path
-results = model(frame)
 
-for result in results:
-  detection_count = result.boxes.shape[0]
-  print("Number of detections : ", detection_count)
-  for i in range(detection_count):
-      cls = int(result.boxes.cls[i].item())
-      name = result.names[cls]
-      confidence = float(result.boxes.conf[i].item())
-      bounding_box = result.boxes.xyxy[i].cpu().numpy()
 
-      x = int(bounding_box[0])
-      y = int(bounding_box[1])
 
-      cx = int((bounding_box[0]+bounding_box[2])/2)
-      cy = int((bounding_box[1]+bounding_box[3])/2)
-      real_x, real_y = detect.get_position(cx, cy)
-      print("real_x,real_y:", (round(real_x, 2), round(real_y, 2)))
 
-      a = threading.Thread(target=lambda:detect.decide_move(real_x, real_y, detect.color))
-      a.start()
-      break
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
