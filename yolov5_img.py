@@ -6,8 +6,9 @@ import datetime
 import threading
 import os,sys
 import matplotlib.pyplot as plt
+from serial import *
 import serial
-import serial.tools.list_ports 
+#from serial.tools import list_ports 
 import platform
 
 from pymycobot.mycobot import MyCobot
@@ -96,11 +97,7 @@ class Object_detect():
         self.BLUE   = (255,178,50)
         self.YELLOW = (0,255,255)
         
-        '''加载类别名'''
-        classesFile = self.path + "/scripts/coco.names"
-        self.classes = None
-        with open(classesFile, 'rt') as f:
-            self.classes = f.read().rstrip('\n').split('\n')
+
        
 
     # 开启吸泵 m5
@@ -594,36 +591,3 @@ if __name__ == "__main__":
     model = YOLO('yolov8n.pt') 
     runs()
     
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
